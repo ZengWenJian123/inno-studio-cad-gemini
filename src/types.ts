@@ -16,6 +16,7 @@ export interface Parameter {
   id: string;
   name: string;
   value: number;
+  defaultValue?: number;
   min: number;
   max: number;
   unit: string;
@@ -43,7 +44,19 @@ export interface ChatMessage {
 
 export interface Project {
   id: string;
+  userId?: string;
   name: string;
   messages: ChatMessage[];
   lastUpdated: number;
+}
+
+export interface Template {
+  id: string;
+  name: string;
+  description: string;
+  scene: SceneState;
+  thumbnail: string;
+  isPublic?: boolean;
+  userId?: string;
+  createdAt?: number;
 }

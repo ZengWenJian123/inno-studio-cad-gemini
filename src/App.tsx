@@ -8,48 +8,65 @@ import { Sidebar } from './components/Sidebar';
 import { ChatPanel } from './components/ChatPanel';
 import { ParamPanel } from './components/ParamPanel';
 import { Viewer } from './components/Viewer';
-import { generateCADModel } from './services/aiService';
-import { Project, ChatMessage, SceneState, Parameter } from './types';
+import { TemplateGallery } from './components/TemplateGallery';
+import { AuthModal } from './components/AuthModal';
+import { ImportSCADModal } from './components/ImportSCADModal';
+import { Toaster } from './components/ui/sonner';
+import { toast } from 'sonner';
+import { generateCADModel, analyzeSCADCode } from './services/aiService';
+import { projectService } from './services/projectService';
+import { Project, ChatMessage, SceneState, Template } from './types';
 import { TooltipProvider } from './components/ui/tooltip';
 import { Button } from './components/ui/button';
+import { Plus, Import } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { auth, signInWithGoogle, logout } from './lib/firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { TEMPLATES } from './constants/templates';
 
 const STORAGE_KEY = 'cadam_projects_v1';
 
 export default function App() {
-  const [projects, setProjects] = useState<Project[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error("Failed to load projects", e);
-      }
-    }
-    return [];
-  });
-  
-  const [currentProjectId, setCurrentProjectId] = useState<string | null>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.length > 0) {
-          return parsed[0].id;
-        }
-      } catch (e) {
-        console.error("Failed to load current project ID", e);
-      }
-    }
-    return null;
-  });
-  
+  const [user, setUser] = useState<User | null>(null);
+  const [projects, setProjects] = useState<Project[]>(() => projectService.getLocalProjects());
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
 
-  // Save projects to localStorage whenever they change
+  // Auth Listener
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-  }, [projects]);
+    return onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+    });
+  }, []);
+
+  // Sync Projects from Firebase
+  useEffect(() => {
+    if (user) {
+      return projectService.subscribeToProjects(user.uid, (cloudProjects) => {
+        setProjects(cloudProjects);
+        if (cloudProjects.length > 0 && !currentProjectId) {
+          setCurrentProjectId(cloudProjects[0].id);
+        }
+      });
+    } else {
+      // Load from local storage when not logged in
+      const local = projectService.getLocalProjects();
+      setProjects(local);
+      if (local.length > 0 && !currentProjectId) {
+        setCurrentProjectId(local[0].id);
+      }
+    }
+  }, [user]);
+
+  // Save projects to local storage fallback
+  useEffect(() => {
+    if (!user) {
+      projectService.saveLocalProjects(projects);
+    }
+  }, [projects, user]);
 
   const currentProject = projects.find(p => p.id === currentProjectId);
   const lastScene = currentProject?.messages
@@ -57,26 +74,75 @@ export default function App() {
     .slice(-1)[0]?.scene;
 
   const handleNewProject = () => {
+    setShowTemplates(true);
+    setCurrentProjectId(null);
+  };
+
+  const handleSelectTemplate = (template: Template | null) => {
     const welcomeMsg: ChatMessage = {
       id: uuidv4(),
       role: 'assistant',
-      content: "Hello! I'm your INNO Studio assistant. Tell me what you'd like to build in 3D, and I'll generate it for you.",
+      content: template 
+        ? `已为您加载 ${template.name}。您想如何修改它？` 
+        : "你好！我是 Adam，你的 INNO Studio 助手。我已为你创建了一个空白画布。你可以描述你想构建的内容，也可以在编辑器选项卡中粘贴 SCAD 代码！",
+      scene: template ? {
+        ...template.scene,
+        parameters: template.scene.parameters?.map(p => ({ ...p, defaultValue: p.value }))
+      } : undefined,
       timestamp: Date.now()
     };
 
     const newProject: Project = {
       id: uuidv4(),
-      name: 'New Creation',
+      name: template ? template.name : '开启新创作',
       messages: [welcomeMsg],
-      lastUpdated: Date.now()
+      lastUpdated: Date.now(),
+      userId: user?.uid
     };
+
     setProjects([newProject, ...projects]);
     setCurrentProjectId(newProject.id);
+    setShowTemplates(false);
+
+    if (user) {
+      projectService.saveProjectToFirebase(newProject, user.uid);
+    }
   };
 
-  const handleDeleteProject = (id: string) => {
+  const handleImportSCAD = (scene: SceneState) => {
+    const welcomeMsg: ChatMessage = {
+      id: uuidv4(),
+      role: 'assistant',
+      content: `我已分析并导入了您的 OpenSCAD 代码。您现在可以使用右侧的参数进行微调，或者直接向我提出修改要求！`,
+      scene,
+      timestamp: Date.now()
+    };
+
+    const newProject: Project = {
+      id: uuidv4(),
+      name: scene.name || '导入的模型',
+      messages: [welcomeMsg],
+      lastUpdated: Date.now(),
+      userId: user?.uid
+    };
+
+    setProjects([newProject, ...projects]);
+    setCurrentProjectId(newProject.id);
+    setShowTemplates(false);
+
+    if (user) {
+      projectService.saveProjectToFirebase(newProject, user.uid);
+    }
+  };
+
+  const handleDeleteProject = async (id: string) => {
     const updated = projects.filter(p => p.id !== id);
     setProjects(updated);
+    
+    if (user) {
+      await projectService.deleteProjectFromFirebase(id);
+    }
+
     if (currentProjectId === id) {
       setCurrentProjectId(updated.length > 0 ? updated[0].id : null);
     }
@@ -93,37 +159,31 @@ export default function App() {
       timestamp: Date.now()
     };
 
-    // Update UI immediately
-    setProjects(prev => prev.map(p => 
+    const updatedProjects = projects.map(p => 
       p.id === currentProjectId 
         ? { ...p, messages: [...p.messages, userMsg], lastUpdated: Date.now() } 
         : p
-    ));
+    );
+    
+    setProjects(updatedProjects);
 
     setIsLoading(true);
     try {
       const history = currentProject?.messages || [];
-      console.log("Calling AI with history length:", history.length);
       const scene = await generateCADModel(content, history, image);
-      console.log("Received scene from AI:", scene);
       
-      if (!scene || !Array.isArray(scene.objects) || scene.objects.length === 0) {
-        console.warn("AI returned a scene with no objects:", scene);
-        // We still allow it but maybe warn the user if it's completely empty
-        if (!scene.description || scene.description.includes("Error")) {
-          throw new Error("AI failed to generate any 3D objects. Please try a different prompt.");
-        }
-      }
-
       const assistantMsg: ChatMessage = {
         id: uuidv4(),
         role: 'assistant',
-        content: scene.description || "Here is the generated model.",
-        scene,
+        content: scene.description || "这是生成的模型。",
+        scene: {
+          ...scene,
+          parameters: scene.parameters?.map(p => ({ ...p, defaultValue: p.value }))
+        },
         timestamp: Date.now()
       };
 
-      setProjects(prev => prev.map(p => 
+      const finalProjects = updatedProjects.map(p => 
         p.id === currentProjectId 
           ? { 
               ...p, 
@@ -132,13 +192,20 @@ export default function App() {
               lastUpdated: Date.now() 
             } 
           : p
-      ));
+      );
+
+      setProjects(finalProjects);
+      
+      const updatedProject = finalProjects.find(p => p.id === currentProjectId);
+      if (user && updatedProject) {
+        projectService.saveProjectToFirebase(updatedProject, user.uid);
+      }
     } catch (error) {
       console.error("Generation failed:", error);
       const errorMsg: ChatMessage = {
         id: uuidv4(),
         role: 'assistant',
-        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please check your API configuration.`,
+        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}.`,
         timestamp: Date.now()
       };
       setProjects(prev => prev.map(p => 
@@ -166,7 +233,6 @@ export default function App() {
         
         const newObj = { ...obj };
         const prop = param.targetProperty;
-        
         const currentScale = obj.scale || [1, 1, 1];
         const currentPos = obj.position || [0, 0, 0];
         
@@ -187,38 +253,161 @@ export default function App() {
       objects: updatedObjects
     };
 
-    setProjects(prev => prev.map(p => {
+    const finalProjects = projects.map(p => {
       if (p.id !== currentProjectId) return p;
       const newMessages = [...p.messages];
       const lastMsgIndex = newMessages.map(m => !!m.scene).lastIndexOf(true);
       if (lastMsgIndex !== -1) {
         newMessages[lastMsgIndex] = { ...newMessages[lastMsgIndex], scene: updatedScene };
       }
-      return { ...p, messages: newMessages };
-    }));
+      return { ...p, messages: newMessages, lastUpdated: Date.now() };
+    });
+
+    setProjects(finalProjects);
+    
+    const updatedProject = finalProjects.find(p => p.id === currentProjectId);
+    if (user && updatedProject) {
+      projectService.saveProjectToFirebase(updatedProject, user.uid);
+    }
   };
 
-  const handleResetParams = () => {
-    // Implementation for reset if needed
+  const handleSaveAsTemplate = async () => {
+    if (!lastScene || !user) {
+      if (!user) {
+        setIsAuthModalOpen(true);
+        toast.error("Please login to save designs as templates.");
+      }
+      return;
+    }
+
+    const toastId = toast.loading("正在保存到社区模板...");
+    try {
+      const templateData: Omit<Template, 'id' | 'createdAt'> = {
+        name: lastScene.name || currentProject?.name || "社区设计",
+        description: lastScene.description || "用户贡献的 3D 模型模板。",
+        scene: lastScene,
+        thumbnail: "✨",
+        isPublic: true,
+        userId: user.uid
+      };
+
+      await projectService.saveAsTemplate(templateData);
+      toast.success("设计已保存到社区模板！", { id: toastId });
+    } catch (error) {
+      console.error("Failed to save template:", error);
+      toast.error("保存模板失败。", { id: toastId });
+    }
+  };
+
+  const handleResetParameters = () => {
+    if (!currentProjectId || !lastScene || !lastScene.parameters) return;
+
+    // Reset all parameters to their default values
+    const resetParameters = lastScene.parameters.map(p => ({
+      ...p,
+      value: p.defaultValue ?? p.value
+    }));
+
+    // Update objects based on reset parameters
+    let updatedObjects = [...lastScene.objects];
+    resetParameters.forEach(param => {
+      if (param.targetObjectId && param.targetProperty) {
+        updatedObjects = updatedObjects.map(obj => {
+          if (obj.id !== param.targetObjectId) return obj;
+          
+          const newObj = { ...obj };
+          const prop = param.targetProperty;
+          const currentScale = obj.scale || [1, 1, 1];
+          const currentPos = obj.position || [0, 0, 0];
+          const value = param.value;
+          
+          if (prop === 'scale.x') newObj.scale = [value, currentScale[1], currentScale[2]];
+          else if (prop === 'scale.y') newObj.scale = [currentScale[0], value, currentScale[2]];
+          else if (prop === 'scale.z') newObj.scale = [currentScale[0], currentScale[1], value];
+          else if (prop === 'position.x') newObj.position = [value, currentPos[1], currentPos[2]];
+          else if (prop === 'position.y') newObj.position = [currentPos[0], value, currentPos[2]];
+          else if (prop === 'position.z') newObj.position = [currentPos[0], currentPos[1], value];
+          
+          return newObj;
+        });
+      }
+    });
+
+    const updatedScene: SceneState = {
+      ...lastScene,
+      parameters: resetParameters,
+      objects: updatedObjects
+    };
+
+    const finalProjects = projects.map(p => {
+      if (p.id !== currentProjectId) return p;
+      const newMessages = [...p.messages];
+      const lastMsgIndex = newMessages.map(m => !!m.scene).lastIndexOf(true);
+      if (lastMsgIndex !== -1) {
+        newMessages[lastMsgIndex] = { ...newMessages[lastMsgIndex], scene: updatedScene };
+      }
+      return { ...p, messages: newMessages, lastUpdated: Date.now() };
+    });
+
+    setProjects(finalProjects);
+    
+    const updatedProject = finalProjects.find(p => p.id === currentProjectId);
+    if (user && updatedProject) {
+      projectService.saveProjectToFirebase(updatedProject, user.uid);
+    }
   };
 
   return (
     <TooltipProvider>
       <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden font-sans">
-        {/* Left Sidebar */}
         <Sidebar 
           projects={projects}
           currentProjectId={currentProjectId}
-          onSelectProject={setCurrentProjectId}
+          onSelectProject={(id) => {
+            setCurrentProjectId(id);
+            setShowTemplates(false);
+          }}
           onNewProject={handleNewProject}
           onDeleteProject={handleDeleteProject}
+          user={user}
+          onLogin={() => setIsAuthModalOpen(true)}
+          onLogout={logout}
         />
 
-        {/* Main Content Area */}
         <div className="flex-1 flex overflow-hidden">
-          {currentProjectId ? (
+          {showTemplates ? (
+            <div className="flex-1 overflow-y-auto bg-slate-950 pt-12">
+              <div className="max-w-4xl mx-auto px-6 mb-8 flex items-center justify-between">
+                <div>
+                  <h1 className="text-3xl font-bold text-white mb-2">开启新创作</h1>
+                  <p className="text-slate-400">选择一个蓝图，从零开始，或导入已有代码。</p>
+                </div>
+                <div className="flex gap-3">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setIsImportModalOpen(true)} 
+                    className="border-slate-800 text-slate-300 hover:bg-slate-900 gap-2 h-11 px-6 rounded-xl"
+                  >
+                    <Import className="w-4 h-4 text-blue-400" />
+                    导入 SCAD
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => handleSelectTemplate(null)} 
+                    className="border-slate-800 text-slate-300 hover:bg-slate-900 gap-2 h-11 px-6 rounded-xl"
+                  >
+                    <Plus className="w-4 h-4" />
+                    空白画板
+                  </Button>
+                </div>
+              </div>
+              <TemplateGallery 
+                onSelectTemplate={handleSelectTemplate} 
+                user={user}
+              />
+            </div>
+          ) : currentProjectId ? (
             <>
-              {/* Chat Panel */}
               <div className="w-[400px] flex-shrink-0">
                 <ChatPanel 
                   messages={currentProject?.messages || []}
@@ -227,22 +416,22 @@ export default function App() {
                 />
               </div>
 
-              {/* Viewport Area */}
               <div className="flex-1 flex flex-col p-6 gap-6 bg-slate-950">
-                <div className="flex-1">
+                <div className="flex-1 min-h-0">
                   <Viewer 
                     objects={lastScene?.objects || []} 
                     projectName={currentProject?.name}
+                    code={lastScene?.code}
+                    onSaveAsTemplate={handleSaveAsTemplate}
                   />
                 </div>
               </div>
 
-              {/* Right Param Panel */}
               <div className="w-80 flex-shrink-0 p-6 pl-0">
                 <ParamPanel 
                   parameters={lastScene?.parameters || []}
                   onParamChange={handleParamChange}
-                  onReset={handleResetParams}
+                  onReset={handleResetParameters}
                 />
               </div>
             </>
@@ -252,23 +441,29 @@ export default function App() {
                 <Box className="w-8 h-8 text-blue-500" />
               </div>
               <div className="text-center space-y-2">
-                <h2 className="text-xl font-bold text-white">Welcome to INNO Studio</h2>
+                <h2 className="text-xl font-bold text-white">欢迎来到 INNO 设计站</h2>
                 <p className="text-slate-500 max-w-xs mx-auto">
-                  Create a new project to start designing 3D models with natural language.
+                  使用自然语言设计 3D 模型，并在您的设备间同步。
                 </p>
               </div>
               <Button onClick={handleNewProject} className="bg-blue-600 hover:bg-blue-500 text-white px-8 h-11 rounded-xl shadow-lg shadow-blue-500/20">
-                Start New Creation
+                开启新创作
               </Button>
             </div>
           )}
         </div>
       </div>
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+      <ImportSCADModal 
+        isOpen={isImportModalOpen} 
+        onClose={() => setIsImportModalOpen(false)} 
+        onImport={handleImportSCAD} 
+      />
+      <Toaster position="top-right" theme="dark" />
     </TooltipProvider>
   );
 }
 
-// Helper icons for empty state
 function Box(props: any) {
   return (
     <svg

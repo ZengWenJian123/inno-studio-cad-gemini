@@ -4,16 +4,18 @@ import { OrbitControls, Grid, Environment, ContactShadows, PerspectiveCamera, Gi
 import { CADObject } from '../types';
 import { SceneObject } from './SceneObject';
 import { Button } from './ui/button';
-import { Download, Maximize2, Box, Share2 } from 'lucide-react';
+import { Download, Maximize2, Box, Share2, Sparkles } from 'lucide-react';
 import * as THREE from 'three';
 import { STLExporter } from 'three-stdlib';
 
 interface ViewerProps {
   objects: CADObject[];
   projectName?: string;
+  code?: string;
+  onSaveAsTemplate?: () => void;
 }
 
-const ExportHandler = ({ objects, projectName }: ViewerProps) => {
+const ExportHandler = ({ objects, projectName, code }: Omit<ViewerProps, 'onSaveAsTemplate'>) => {
   const { scene } = useThree();
 
   const handleExportSTL = () => {
@@ -32,6 +34,18 @@ const ExportHandler = ({ objects, projectName }: ViewerProps) => {
     document.body.removeChild(link);
   };
 
+  const handleExportSCAD = () => {
+    if (!code) return;
+    const blob = new Blob([code], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.href = URL.createObjectURL(blob);
+    link.download = `${projectName || 'model'}.scad`;
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <Html fullscreen style={{ pointerEvents: 'none' }}>
       <div className="absolute bottom-6 right-6 flex flex-col gap-3 items-end pointer-events-auto">
@@ -40,7 +54,7 @@ const ExportHandler = ({ objects, projectName }: ViewerProps) => {
             variant="ghost" 
             size="icon" 
             className="h-9 w-9 text-slate-400 hover:text-white hover:bg-slate-800"
-            title="Toggle Fullscreen"
+            title="切换全屏"
           >
             <Maximize2 className="w-4 h-4" />
           </Button>
@@ -48,13 +62,22 @@ const ExportHandler = ({ objects, projectName }: ViewerProps) => {
             variant="ghost" 
             size="icon" 
             className="h-9 w-9 text-slate-400 hover:text-white hover:bg-slate-800"
-            title="Wireframe Mode"
+            title="线框模式"
           >
             <Box className="w-4 h-4" />
           </Button>
         </div>
         
         <div className="flex gap-2">
+          {code && (
+            <Button 
+              onClick={handleExportSCAD}
+              className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-6 h-12 rounded-xl shadow-xl flex items-center gap-2 group transition-all shadow-blue-500/20"
+            >
+              <Download className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
+              SCAD
+            </Button>
+          )}
           <Button 
             onClick={handleExportSTL}
             className="bg-white hover:bg-slate-100 text-slate-950 font-bold px-6 h-12 rounded-xl shadow-xl flex items-center gap-2 group transition-all"
@@ -82,7 +105,7 @@ const getGeometry = (type: string) => {
   }
 };
 
-export const Viewer: React.FC<ViewerProps> = ({ objects, projectName }) => {
+export const Viewer: React.FC<ViewerProps> = ({ objects, projectName, code, onSaveAsTemplate }) => {
   // Check if any object uses CSG operations
   const useCSG = objects.some(obj => obj.operation);
 
@@ -144,19 +167,30 @@ export const Viewer: React.FC<ViewerProps> = ({ objects, projectName }) => {
 
           <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 1.75} maxDistance={5000} />
         </Suspense>
-        <ExportHandler objects={objects} projectName={projectName} />
+        <ExportHandler objects={objects} projectName={projectName} code={code} />
       </Canvas>
 
       {/* Top Controls */}
       <div className="absolute top-6 left-6 flex items-center gap-4 pointer-events-none">
         <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800 px-4 py-2 rounded-xl shadow-xl pointer-events-auto flex items-center gap-3">
           <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          <span className="text-xs font-bold text-slate-200 tracking-tight uppercase">{projectName || 'Untitled Creation'}</span>
+          <span className="text-xs font-bold text-slate-200 tracking-tight uppercase">{projectName || '未命名作品'}</span>
         </div>
-        <Button variant="ghost" size="sm" className="bg-slate-900/80 backdrop-blur-md border border-slate-800 text-slate-200 rounded-xl h-9 px-4 pointer-events-auto flex items-center gap-2 hover:bg-slate-800">
-          <Share2 className="w-3.5 h-3.5" />
-          Share
-        </Button>
+        <div className="flex gap-2 pointer-events-auto">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={onSaveAsTemplate}
+            className="bg-slate-900/80 backdrop-blur-md border border-slate-800 text-blue-400 rounded-xl h-9 px-4 flex items-center gap-2 hover:bg-slate-800 hover:text-blue-300 transition-colors"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            保存为模板
+          </Button>
+          <Button variant="ghost" size="sm" className="bg-slate-900/80 backdrop-blur-md border border-slate-800 text-slate-200 rounded-xl h-9 px-4 flex items-center gap-2 hover:bg-slate-800">
+            <Share2 className="w-3.5 h-3.5" />
+            分享
+          </Button>
+        </div>
       </div>
     </div>
   );

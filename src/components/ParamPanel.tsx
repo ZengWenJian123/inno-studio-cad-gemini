@@ -17,7 +17,7 @@ export const ParamPanel: React.FC<ParamPanelProps> = ({ parameters, onParamChang
   return (
     <Card className="h-full bg-slate-900 border-slate-800 flex flex-col overflow-hidden shadow-2xl">
       <CardHeader className="pb-4 border-b border-slate-800 flex flex-row items-center justify-between">
-        <CardTitle className="text-sm font-bold text-white tracking-tight uppercase">Parameters</CardTitle>
+        <CardTitle className="text-sm font-bold text-white tracking-tight uppercase">参数设置</CardTitle>
         <Button variant="ghost" size="icon" onClick={onReset} className="h-8 w-8 text-slate-400 hover:text-white">
           <RotateCcw className="w-4 h-4" />
         </Button>
@@ -95,7 +95,7 @@ export const ParamPanel: React.FC<ParamPanelProps> = ({ parameters, onParamChang
           })}
           {parameters.length === 0 && (
             <div className="py-12 text-center">
-              <p className="text-xs text-slate-500 italic">No adjustable parameters found</p>
+              <p className="text-xs text-slate-500 italic">未发现可调节参数</p>
             </div>
           )}
         </CardContent>

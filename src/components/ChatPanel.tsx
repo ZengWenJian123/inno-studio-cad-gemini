@@ -114,7 +114,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onSendMessage, i
                     {msg.image && (
                       <img 
                         src={msg.image} 
-                        alt="User uploaded reference" 
+                        alt="用户上传的参考图" 
                         className="max-w-full rounded-lg mb-2 max-h-48 object-contain"
                       />
                     )}
@@ -125,7 +125,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onSendMessage, i
                     <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-950/50 border border-slate-800 rounded-full">
                       <Box className="w-3 h-3 text-blue-500" />
                       <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">
-                        Model Version {messages.filter(m => m.scene && m.timestamp <= msg.timestamp).length}
+                        模型版本 {messages.filter(m => m.scene && m.timestamp <= msg.timestamp).length}
                       </span>
                     </div>
                   )}
@@ -187,7 +187,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onSendMessage, i
               <ImageIcon className="w-4 h-4" />
             </Button>
             <Input
-              placeholder="Keep iterating with CADAM..."
+              placeholder="与 Adam 持续交流..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               className="bg-slate-950 border-slate-800 focus-visible:ring-blue-500 text-slate-200 h-12 pl-12 pr-12 rounded-xl w-full"

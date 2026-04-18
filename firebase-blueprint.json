@@ -1,0 +1,43 @@
+{
+  "entities": {
+    "Project": {
+      "title": "3D Project",
+      "description": "A project containing chat history and 3D scenes.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "messages": { "type": "array" },
+        "lastUpdated": { "type": "number" },
+        "thumbnail": { "type": "string" }
+      },
+      "required": ["userId", "name", "messages", "lastUpdated"]
+    },
+    "Template": {
+      "title": "Scene Template",
+      "description": "A reusable 3D scene template.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "scene": { "type": "object" },
+        "thumbnail": { "type": "string" },
+        "isPublic": { "type": "boolean" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "name", "description", "scene", "thumbnail"]
+    }
+  },
+  "firestore": {
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Collection of projects owned by users."
+    },
+    "/templates/{templateId}": {
+      "schema": "Template",
+      "description": "Collection of community and official templates."
+    }
+  }
+}
