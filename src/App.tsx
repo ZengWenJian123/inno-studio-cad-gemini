@@ -13,7 +13,7 @@ import { AuthModal } from './components/AuthModal';
 import { ImportSCADModal } from './components/ImportSCADModal';
 import { Toaster } from './components/ui/sonner';
 import { toast } from 'sonner';
-import { generateCADModel, analyzeSCADCode } from './services/aiService';
+import { generateCADModel, analyzeSCADCode, clarifyRequirements } from './services/aiService';
 import { projectService } from './services/projectService';
 import { Project, ChatMessage, SceneState, Template } from './types';
 import { TooltipProvider } from './components/ui/tooltip';
@@ -30,7 +30,8 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [projects, setProjects] = useState<Project[]>(() => projectService.getLocalProjects());
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [loadingProjectIds, setLoadingProjectIds] = useState<Set<string>>(new Set());
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -148,9 +149,21 @@ export default function App() {
     }
   };
 
-  const handleSendMessage = async (content: string, image?: string) => {
-    if (!currentProjectId || isLoading) return;
+  const saveProject = async (project: Project) => {
+    if (user) {
+      setIsSyncing(true);
+      try {
+        await projectService.saveProjectToFirebase(project, user.uid);
+      } finally {
+        setTimeout(() => setIsSyncing(false), 800);
+      }
+    }
+  };
 
+  const handleSendMessage = async (content: string, image?: string, isEngineerMode?: boolean) => {
+    if (!currentProjectId || loadingProjectIds.has(currentProjectId)) return;
+
+    const projectId = currentProjectId;
     const userMsg: ChatMessage = {
       id: uuidv4(),
       role: 'user',
@@ -160,61 +173,91 @@ export default function App() {
     };
 
     const updatedProjects = projects.map(p => 
-      p.id === currentProjectId 
+      p.id === projectId 
         ? { ...p, messages: [...p.messages, userMsg], lastUpdated: Date.now() } 
         : p
     );
     
     setProjects(updatedProjects);
 
-    setIsLoading(true);
+    setLoadingProjectIds(prev => new Set(prev).add(projectId));
     try {
       const history = currentProject?.messages || [];
-      const scene = await generateCADModel(content, history, image);
-      
-      const assistantMsg: ChatMessage = {
-        id: uuidv4(),
-        role: 'assistant',
-        content: scene.description || "这是生成的模型。",
-        scene: {
-          ...scene,
-          parameters: scene.parameters?.map(p => ({ ...p, defaultValue: p.value }))
-        },
-        timestamp: Date.now()
-      };
 
-      const finalProjects = updatedProjects.map(p => 
-        p.id === currentProjectId 
-          ? { 
-              ...p, 
-              name: p.messages.length === 1 ? (scene.name || content.slice(0, 30) + (content.length > 30 ? '...' : '')) : p.name,
-              messages: [...p.messages, assistantMsg], 
-              lastUpdated: Date.now() 
-            } 
-          : p
-      );
+      if (isEngineerMode) {
+        const result = await clarifyRequirements(content, history);
+        
+        const assistantMsg: ChatMessage = {
+          id: uuidv4(),
+          role: 'assistant',
+          content: result.content,
+          readyToGenerate: result.isReady,
+          summary: result.summary,
+          timestamp: Date.now()
+        };
 
-      setProjects(finalProjects);
-      
-      const updatedProject = finalProjects.find(p => p.id === currentProjectId);
-      if (user && updatedProject) {
-        projectService.saveProjectToFirebase(updatedProject, user.uid);
+        const finalProjects = projects.map(p => 
+          p.id === projectId 
+            ? { ...p, messages: [...p.messages, userMsg, assistantMsg], lastUpdated: Date.now() } 
+            : p
+        );
+        setProjects(finalProjects);
+
+        const updatedProject = finalProjects.find(p => p.id === projectId);
+        if (updatedProject) {
+          saveProject(updatedProject);
+        }
+      } else {
+        const scene = await generateCADModel(content, history, image);
+        
+        const assistantMsg: ChatMessage = {
+          id: uuidv4(),
+          role: 'assistant',
+          content: scene.description || "这是生成的模型。",
+          scene: {
+            ...scene,
+            parameters: scene.parameters?.map(p => ({ ...p, defaultValue: p.value }))
+          },
+          timestamp: Date.now()
+        };
+
+        const finalProjects = projects.map(p => 
+          p.id === projectId 
+            ? { 
+                ...p, 
+                name: p.messages.length <= 1 ? (scene.name || content.slice(0, 30) + (content.length > 30 ? '...' : '')) : p.name,
+                messages: [...p.messages, userMsg, assistantMsg], 
+                lastUpdated: Date.now() 
+              } 
+            : p
+        );
+
+        setProjects(finalProjects);
+        
+        const updatedProject = finalProjects.find(p => p.id === projectId);
+        if (updatedProject) {
+          saveProject(updatedProject);
+        }
       }
     } catch (error) {
       console.error("Generation failed:", error);
       const errorMsg: ChatMessage = {
         id: uuidv4(),
         role: 'assistant',
-        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}.`,
+        content: `抱歉，生成时遇到了错误: ${error instanceof Error ? error.message : '未知错误'}。`,
         timestamp: Date.now()
       };
       setProjects(prev => prev.map(p => 
-        p.id === currentProjectId 
+        p.id === projectId 
           ? { ...p, messages: [...p.messages, errorMsg], lastUpdated: Date.now() } 
           : p
       ));
     } finally {
-      setIsLoading(false);
+      setLoadingProjectIds(prev => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      });
     }
   };
 
@@ -266,8 +309,8 @@ export default function App() {
     setProjects(finalProjects);
     
     const updatedProject = finalProjects.find(p => p.id === currentProjectId);
-    if (user && updatedProject) {
-      projectService.saveProjectToFirebase(updatedProject, user.uid);
+    if (updatedProject) {
+      saveProject(updatedProject);
     }
   };
 
@@ -352,8 +395,8 @@ export default function App() {
     setProjects(finalProjects);
     
     const updatedProject = finalProjects.find(p => p.id === currentProjectId);
-    if (user && updatedProject) {
-      projectService.saveProjectToFirebase(updatedProject, user.uid);
+    if (updatedProject) {
+      saveProject(updatedProject);
     }
   };
 
@@ -363,6 +406,7 @@ export default function App() {
         <Sidebar 
           projects={projects}
           currentProjectId={currentProjectId}
+          loadingProjectIds={loadingProjectIds}
           onSelectProject={(id) => {
             setCurrentProjectId(id);
             setShowTemplates(false);
@@ -408,11 +452,11 @@ export default function App() {
             </div>
           ) : currentProjectId ? (
             <>
-              <div className="w-[400px] flex-shrink-0">
+              <div className="w-[400px] flex-shrink-0 h-full overflow-hidden border-r border-slate-800">
                 <ChatPanel 
                   messages={currentProject?.messages || []}
                   onSendMessage={handleSendMessage}
-                  isLoading={isLoading}
+                  isLoading={loadingProjectIds.has(currentProjectId)}
                 />
               </div>
 
@@ -422,6 +466,7 @@ export default function App() {
                     objects={lastScene?.objects || []} 
                     projectName={currentProject?.name}
                     code={lastScene?.code}
+                    isSyncing={isSyncing}
                     onSaveAsTemplate={handleSaveAsTemplate}
                   />
                 </div>

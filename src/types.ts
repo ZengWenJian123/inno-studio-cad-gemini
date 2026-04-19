@@ -39,6 +39,8 @@ export interface ChatMessage {
   content: string;
   image?: string;
   scene?: SceneState;
+  readyToGenerate?: boolean;
+  summary?: string;
   timestamp: number;
 }
 

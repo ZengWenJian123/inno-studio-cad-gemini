@@ -7,11 +7,15 @@ import { Button } from './ui/button';
 import { Download, Maximize2, Box, Share2, Sparkles } from 'lucide-react';
 import * as THREE from 'three';
 import { STLExporter } from 'three-stdlib';
+import { SystemStatus } from './SystemStatus';
+import { Geometry, Base, Subtraction, Addition, Intersection } from '@react-three/csg';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 interface ViewerProps {
   objects: CADObject[];
   projectName?: string;
   code?: string;
+  isSyncing?: boolean;
   onSaveAsTemplate?: () => void;
 }
 
@@ -91,8 +95,6 @@ const ExportHandler = ({ objects, projectName, code }: Omit<ViewerProps, 'onSave
   );
 };
 
-import { Geometry, Base, Subtraction, Addition, Intersection } from '@react-three/csg';
-
 const getGeometry = (type: string) => {
   switch (type) {
     case 'box': return <boxGeometry />;
@@ -105,7 +107,7 @@ const getGeometry = (type: string) => {
   }
 };
 
-export const Viewer: React.FC<ViewerProps> = ({ objects, projectName, code, onSaveAsTemplate }) => {
+export const Viewer: React.FC<ViewerProps> = ({ objects, projectName, code, isSyncing, onSaveAsTemplate }) => {
   // Check if any object uses CSG operations
   const useCSG = objects.some(obj => obj.operation);
 
@@ -170,23 +172,28 @@ export const Viewer: React.FC<ViewerProps> = ({ objects, projectName, code, onSa
         <ExportHandler objects={objects} projectName={projectName} code={code} />
       </Canvas>
 
-      {/* Top Controls */}
-      <div className="absolute top-6 left-6 flex items-center gap-4 pointer-events-none">
-        <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800 px-4 py-2 rounded-xl shadow-xl pointer-events-auto flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          <span className="text-xs font-bold text-slate-200 tracking-tight uppercase">{projectName || '未命名作品'}</span>
+      {/* Top Controls - Unified Capsule */}
+      <div className="absolute top-6 left-6 right-6 flex items-center justify-between pointer-events-none">
+        <div className="flex items-center gap-3">
+          <div className="pointer-events-auto">
+            <SystemStatus isSyncing={isSyncing}>
+              <Tooltip>
+                <TooltipTrigger 
+                  onClick={onSaveAsTemplate}
+                  className="w-7 h-7 text-blue-400 hover:text-blue-300 hover:bg-white/5 rounded-full transition-all flex items-center justify-center cursor-pointer pointer-events-auto"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-[10px] font-bold uppercase tracking-wider">
+                  保存为模板
+                </TooltipContent>
+              </Tooltip>
+            </SystemStatus>
+          </div>
         </div>
+
         <div className="flex gap-2 pointer-events-auto">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={onSaveAsTemplate}
-            className="bg-slate-900/80 backdrop-blur-md border border-slate-800 text-blue-400 rounded-xl h-9 px-4 flex items-center gap-2 hover:bg-slate-800 hover:text-blue-300 transition-colors"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            保存为模板
-          </Button>
-          <Button variant="ghost" size="sm" className="bg-slate-900/80 backdrop-blur-md border border-slate-800 text-slate-200 rounded-xl h-9 px-4 flex items-center gap-2 hover:bg-slate-800">
+          <Button variant="ghost" size="sm" className="bg-slate-900/80 backdrop-blur-md border border-slate-800 text-slate-200 rounded-xl h-9 px-4 flex items-center gap-2 hover:bg-slate-800 shadow-lg">
             <Share2 className="w-3.5 h-3.5" />
             分享
           </Button>

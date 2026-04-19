@@ -2,13 +2,14 @@ import React from 'react';
 import { Project } from '../types';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
-import { Plus, LayoutGrid, MessageSquare, Trash2, LogOut, LogIn, User, ExternalLink } from 'lucide-react';
+import { Plus, LayoutGrid, MessageSquare, Trash2, LogOut, LogIn, User, ExternalLink, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { User as FirebaseUser } from 'firebase/auth';
 
 interface SidebarProps {
   projects: Project[];
   currentProjectId: string | null;
+  loadingProjectIds: Set<string>;
   onSelectProject: (id: string) => void;
   onNewProject: () => void;
   onDeleteProject: (id: string) => void;
@@ -20,6 +21,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ 
   projects, 
   currentProjectId, 
+  loadingProjectIds,
   onSelectProject, 
   onNewProject,
   onDeleteProject,
@@ -62,7 +64,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               )}
               onClick={() => onSelectProject(project.id)}
             >
-              <MessageSquare className="w-4 h-4 flex-shrink-0" />
+              {loadingProjectIds.has(project.id) ? (
+                <Loader2 className="w-4 h-4 flex-shrink-0 text-blue-500 animate-spin" />
+              ) : (
+                <MessageSquare className="w-4 h-4 flex-shrink-0" />
+              )}
               <span className="text-xs font-medium truncate flex-1">{project.name}</span>
               
               <Button

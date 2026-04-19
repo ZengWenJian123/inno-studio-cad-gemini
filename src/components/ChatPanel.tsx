@@ -3,13 +3,13 @@ import { ChatMessage } from '../types';
 import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Loader2, Send, User, Bot, Box, ChevronDown, ChevronRight, Image as ImageIcon, X } from 'lucide-react';
+import { Loader2, Send, User, Bot, Box, ChevronDown, ChevronRight, Image as ImageIcon, X, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
-  onSendMessage: (content: string, image?: string) => void;
+  onSendMessage: (content: string, image?: string, isEngineerMode?: boolean) => void;
   isLoading: boolean;
 }
 
@@ -48,6 +48,7 @@ const CodeBlock = ({ code }: { code: string }) => {
 export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onSendMessage, isLoading }) => {
   const [input, setInput] = React.useState('');
   const [selectedImage, setSelectedImage] = useState<string | undefined>();
+  const [isEngineerMode, setIsEngineerMode] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -72,17 +73,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onSendMessage, i
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if ((!input.trim() && !selectedImage) || isLoading) return;
-    onSendMessage(input, selectedImage);
-    setInput('');
+  const handleSubmit = (e?: React.FormEvent, customPrompt?: string) => {
+    if (e) e.preventDefault();
+    const finalInput = customPrompt ?? input;
+    if ((!finalInput.trim() && !selectedImage) || isLoading) return;
+    onSendMessage(finalInput, selectedImage, isEngineerMode);
+    if (!customPrompt) setInput('');
     setSelectedImage(undefined);
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-900/30 border-r border-slate-800">
-      <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+    <div className="flex flex-col h-full bg-slate-900/30">
+      <ScrollArea className="flex-1 min-h-0 p-4" ref={scrollRef}>
         <div className="space-y-6 max-w-2xl mx-auto">
           <AnimatePresence mode="popLayout">
             {messages.map((msg) => (
@@ -119,6 +121,27 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onSendMessage, i
                       />
                     )}
                     {msg.content}
+
+                    {msg.role === 'assistant' && msg.readyToGenerate && (
+                      <div className="mt-4 pt-4 border-t border-slate-700">
+                        {msg.summary && (
+                          <div className="mb-4 bg-slate-950/50 p-3 rounded-xl border border-slate-700/50">
+                            <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1 font-bold">需求摘要</p>
+                            <p className="text-sm text-slate-300 italic">“{msg.summary}”</p>
+                          </div>
+                        )}
+                        <Button 
+                          onClick={() => {
+                            setIsEngineerMode(false); // Switch to direct mode for generation
+                            handleSubmit(undefined, "请根据我们刚刚确认的需求开始生成第一个模型版本。");
+                          }}
+                          className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold gap-2 py-6 rounded-xl shadow-lg shadow-blue-500/20"
+                        >
+                          <Sparkles className="w-4 h-4" />
+                          开始生成模型
+                        </Button>
+                      </div>
+                    )}
                   </div>
                   {msg.scene?.code && <CodeBlock code={msg.scene.code} />}
                   {msg.scene && (
@@ -143,19 +166,54 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onSendMessage, i
                 <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
               </div>
               <div className="bg-slate-800/50 border border-slate-700 px-4 py-3 rounded-2xl rounded-tl-none">
-                <div className="flex gap-1">
-                  <span className="w-1.5 h-1.5 bg-blue-500/50 rounded-full animate-bounce" />
-                  <span className="w-1.5 h-1.5 bg-blue-500/50 rounded-full animate-bounce [animation-delay:0.2s]" />
-                  <span className="w-1.5 h-1.5 bg-blue-500/50 rounded-full animate-bounce [animation-delay:0.4s]" />
-                </div>
+                {isEngineerMode ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400 font-medium">工程师正在梳理中...</span>
+                    <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
+                  </div>
+                ) : (
+                  <div className="flex gap-1">
+                    <span className="w-1.5 h-1.5 bg-blue-500/50 rounded-full animate-bounce" />
+                    <span className="w-1.5 h-1.5 bg-blue-500/50 rounded-full animate-bounce [animation-delay:0.2s]" />
+                    <span className="w-1.5 h-1.5 bg-blue-500/50 rounded-full animate-bounce [animation-delay:0.4s]" />
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
         </div>
       </ScrollArea>
 
-      <div className="p-4 border-t border-slate-800 bg-slate-900/50 backdrop-blur-md">
-        <form onSubmit={handleSubmit} className="relative max-w-2xl mx-auto flex flex-col gap-2">
+      <div className="flex-shrink-0 p-4 border-t border-slate-800 bg-slate-900/50 backdrop-blur-md">
+        <form onSubmit={handleSubmit} className="relative max-w-2xl mx-auto flex flex-col gap-3">
+          <div className="flex items-center gap-4 bg-slate-950/50 border border-slate-800 p-1 rounded-xl w-fit">
+            <button
+              type="button"
+              onClick={() => setIsEngineerMode(false)}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all",
+                !isEngineerMode 
+                  ? "bg-blue-600 text-white shadow-lg" 
+                  : "text-slate-500 hover:text-slate-300"
+              )}
+            >
+              直接生成
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsEngineerMode(true)}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5",
+                isEngineerMode 
+                  ? "bg-blue-600 text-white shadow-lg" 
+                  : "text-slate-500 hover:text-slate-300"
+              )}
+            >
+              {isEngineerMode && <div className="w-1 h-1 bg-white rounded-full animate-pulse" />}
+              AI 梳理需求
+            </button>
+          </div>
+          
           {selectedImage && (
             <div className="relative inline-block w-24 h-24 rounded-lg overflow-hidden border border-slate-700 bg-slate-800">
               <img src={selectedImage} alt="Selected" className="w-full h-full object-cover" />
@@ -187,10 +245,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onSendMessage, i
               <ImageIcon className="w-4 h-4" />
             </Button>
             <Input
-              placeholder="与 Adam 持续交流..."
+              placeholder={isEngineerMode ? "向 Adam 描述您的想法，他会帮您细化..." : "直接输入您想构建的内容..."}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              className="bg-slate-950 border-slate-800 focus-visible:ring-blue-500 text-slate-200 h-12 pl-12 pr-12 rounded-xl w-full"
+              className="bg-slate-950 border-slate-800 focus-visible:ring-blue-500 text-slate-200 h-12 pl-12 pr-12 rounded-xl w-full transition-all"
               disabled={isLoading}
             />
             <Button 

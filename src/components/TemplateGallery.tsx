@@ -26,6 +26,9 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTempla
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   
+  // Confirmation State
+  const [deletingTemplate, setDeletingTemplate] = useState<Template | null>(null);
+  
   // Edit State
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [editName, setEditName] = useState('');
@@ -47,17 +50,24 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTempla
     fetchTemplates();
   }, []);
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (!window.confirm('确定要删除这个模板吗？此操作不可撤销。')) return;
+  const handleDelete = async () => {
+    if (!deletingTemplate) return;
+    const id = deletingTemplate.id;
 
     try {
       await projectService.deleteTemplate(id);
       toast.success('模板已删除');
+      setDeletingTemplate(null);
       fetchTemplates();
     } catch (error) {
       toast.error('删除失败');
+      console.error("Delete error:", error);
     }
+  };
+
+  const startDelete = (e: React.MouseEvent, template: Template) => {
+    e.stopPropagation();
+    setDeletingTemplate(template);
   };
 
   const startEdit = (e: React.MouseEvent, template: Template) => {
@@ -185,7 +195,7 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTempla
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-red-400 rounded-lg"
-                              onClick={(e) => handleDelete(e, template.id)}
+                              onClick={(e) => startDelete(e, template)}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </Button>
@@ -296,6 +306,41 @@ export const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTempla
               className="bg-blue-600 hover:bg-blue-500 text-white px-6"
             >
               保存修改
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deletingTemplate} onOpenChange={(open) => !open && setDeletingTemplate(null)}>
+        <DialogContent className="sm:max-w-[400px] bg-slate-900 border-slate-800 text-slate-200">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-400" />
+              确认删除
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-slate-400">
+              您确定要删除模板 <span className="text-white font-bold">"{deletingTemplate?.name}"</span> 吗？
+            </p>
+            <p className="text-slate-500 text-sm mt-2">
+              此操作不可撤销，该模板将从库中永久移除。
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setDeletingTemplate(null)}
+              className="border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-white"
+            >
+              取消
+            </Button>
+            <Button 
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-500 text-white px-6 shadow-lg shadow-red-500/20"
+            >
+              确认删除
             </Button>
           </DialogFooter>
         </DialogContent>
