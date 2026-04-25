@@ -13,9 +13,9 @@ import { AuthModal } from './components/AuthModal';
 import { ImportSCADModal } from './components/ImportSCADModal';
 import { Toaster } from './components/ui/sonner';
 import { toast } from 'sonner';
-import { generateCADModel, analyzeSCADCode, clarifyRequirements } from './services/aiService';
+import { generateCADModel, analyzeSCADCode, clarifyRequirements, DEFAULT_AI_CONFIG } from './services/aiService';
 import { projectService } from './services/projectService';
-import { Project, ChatMessage, SceneState, Template } from './types';
+import { Project, ChatMessage, SceneState, Template, AIConfig } from './types';
 import { TooltipProvider } from './components/ui/tooltip';
 import { Button } from './components/ui/button';
 import { Plus, Import } from 'lucide-react';
@@ -28,6 +28,10 @@ const STORAGE_KEY = 'cadam_projects_v1';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [aiConfig, setAiConfig] = useState<AIConfig>(() => {
+    const saved = localStorage.getItem('cadam_ai_config');
+    return saved ? JSON.parse(saved) : DEFAULT_AI_CONFIG;
+  });
   const [projects, setProjects] = useState<Project[]>(() => projectService.getLocalProjects());
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [loadingProjectIds, setLoadingProjectIds] = useState<Set<string>>(new Set());
@@ -35,6 +39,10 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('cadam_ai_config', JSON.stringify(aiConfig));
+  }, [aiConfig]);
 
   // Auth Listener
   useEffect(() => {
@@ -185,7 +193,7 @@ export default function App() {
       const history = currentProject?.messages || [];
 
       if (isEngineerMode) {
-        const result = await clarifyRequirements(content, history);
+        const result = await clarifyRequirements(content, history, aiConfig);
         
         const assistantMsg: ChatMessage = {
           id: uuidv4(),
@@ -208,7 +216,7 @@ export default function App() {
           saveProject(updatedProject);
         }
       } else {
-        const scene = await generateCADModel(content, history, image);
+        const scene = await generateCADModel(content, history, image, aiConfig);
         
         const assistantMsg: ChatMessage = {
           id: uuidv4(),
@@ -416,6 +424,8 @@ export default function App() {
           user={user}
           onLogin={() => setIsAuthModalOpen(true)}
           onLogout={logout}
+          aiConfig={aiConfig}
+          onConfigChange={setAiConfig}
         />
 
         <div className="flex-1 flex overflow-hidden">
@@ -464,6 +474,7 @@ export default function App() {
                 <div className="flex-1 min-h-0">
                   <Viewer 
                     objects={lastScene?.objects || []} 
+                    parameters={lastScene?.parameters || []}
                     projectName={currentProject?.name}
                     code={lastScene?.code}
                     isSyncing={isSyncing}

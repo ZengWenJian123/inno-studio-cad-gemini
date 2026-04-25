@@ -44,6 +44,13 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export type AIProvider = 'gemini' | 'deepseek';
+
+export interface AIConfig {
+  provider: AIProvider;
+  model: string;
+}
+
 export interface Project {
   id: string;
   userId?: string;

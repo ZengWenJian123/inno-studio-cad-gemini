@@ -11,6 +11,9 @@ export default defineConfig(({mode}) => {
       'process.env.AI_API_KEY': JSON.stringify(env.AI_API_KEY),
       'process.env.AI_BASE_URL': JSON.stringify(env.AI_BASE_URL),
       'process.env.AI_MODEL': JSON.stringify(env.AI_MODEL),
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      'process.env.DEEPSEEK_API_KEY': JSON.stringify(env.DEEPSEEK_API_KEY),
+      'process.env.DEEPSEEK_BASE_URL': JSON.stringify(env.DEEPSEEK_BASE_URL),
     },
     resolve: {
       alias: {

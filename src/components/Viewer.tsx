@@ -1,26 +1,44 @@
 import React, { Suspense, useRef } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Environment, ContactShadows, PerspectiveCamera, GizmoHelper, GizmoViewport, Html } from '@react-three/drei';
-import { CADObject } from '../types';
+import { CADObject, Parameter } from '../types';
 import { SceneObject } from './SceneObject';
 import { Button } from './ui/button';
-import { Download, Maximize2, Box, Share2, Sparkles } from 'lucide-react';
+import { Download, Maximize2, Box, Share2, Sparkles, Copy } from 'lucide-react';
 import * as THREE from 'three';
 import { STLExporter } from 'three-stdlib';
 import { SystemStatus } from './SystemStatus';
 import { Geometry, Base, Subtraction, Addition, Intersection } from '@react-three/csg';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
+import { toast } from 'sonner';
 
 interface ViewerProps {
   objects: CADObject[];
+  parameters?: Parameter[];
   projectName?: string;
   code?: string;
   isSyncing?: boolean;
   onSaveAsTemplate?: () => void;
 }
 
-const ExportHandler = ({ objects, projectName, code }: Omit<ViewerProps, 'onSaveAsTemplate'>) => {
+const ExportHandler = ({ objects, parameters = [], projectName, code }: Omit<ViewerProps, 'onSaveAsTemplate'>) => {
   const { scene } = useThree();
+
+  const getSyncedCode = () => {
+    if (!code) return '';
+    let syncedCode = code;
+    
+    // Attempt to sync current parameter values into the SCAD code string
+    parameters.forEach(param => {
+      // Look for patterns like: param_name = 10; or param_name=10; or param_name  =  10;
+      // We escape the param ID just in case
+      const escapedId = param.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(${escapedId}\\s*=\\s*)([\\d.]+)`, 'g');
+      syncedCode = syncedCode.replace(regex, `$1${param.value}`);
+    });
+    
+    return syncedCode;
+  };
 
   const handleExportSTL = () => {
     const exportGroup = scene.getObjectByName('export-group');
@@ -39,8 +57,9 @@ const ExportHandler = ({ objects, projectName, code }: Omit<ViewerProps, 'onSave
   };
 
   const handleExportSCAD = () => {
-    if (!code) return;
-    const blob = new Blob([code], { type: 'text/plain' });
+    const syncedCode = getSyncedCode();
+    if (!syncedCode) return;
+    const blob = new Blob([syncedCode], { type: 'text/plain' });
     const link = document.createElement('a');
     link.style.display = 'none';
     document.body.appendChild(link);
@@ -50,38 +69,59 @@ const ExportHandler = ({ objects, projectName, code }: Omit<ViewerProps, 'onSave
     document.body.removeChild(link);
   };
 
+  const handleCopySCAD = () => {
+    const syncedCode = getSyncedCode();
+    if (!syncedCode) return;
+    navigator.clipboard.writeText(syncedCode);
+    toast.success("已复制 OpenSCAD 代码到剪贴板");
+  };
+
   return (
     <Html fullscreen style={{ pointerEvents: 'none' }}>
       <div className="absolute bottom-6 right-6 flex flex-col gap-3 items-end pointer-events-auto">
         <div className="flex gap-2 bg-slate-900/80 backdrop-blur-md p-1.5 rounded-xl border border-slate-800 shadow-2xl">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="h-9 w-9 text-slate-400 hover:text-white hover:bg-slate-800"
-            title="切换全屏"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </Button>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="h-9 w-9 text-slate-400 hover:text-white hover:bg-slate-800"
-            title="线框模式"
-          >
-            <Box className="w-4 h-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger 
+              className="h-9 w-9 text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center rounded-lg"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </TooltipTrigger>
+            <TooltipContent>切换全屏</TooltipContent>
+          </Tooltip>
+          
+          <Tooltip>
+            <TooltipTrigger 
+              className="h-9 w-9 text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center rounded-lg"
+            >
+              <Box className="w-4 h-4" />
+            </TooltipTrigger>
+            <TooltipContent>线框模式</TooltipContent>
+          </Tooltip>
         </div>
         
         <div className="flex gap-2">
           {code && (
-            <Button 
-              onClick={handleExportSCAD}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-6 h-12 rounded-xl shadow-xl flex items-center gap-2 group transition-all shadow-blue-500/20"
-            >
-              <Download className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
-              SCAD
-            </Button>
+            <div className="flex gap-1 bg-slate-900/80 backdrop-blur-md p-1 rounded-xl border border-slate-800 shadow-xl">
+              <Tooltip>
+                <TooltipTrigger 
+                  onClick={handleCopySCAD}
+                  className="h-10 w-10 text-slate-400 hover:text-blue-400 hover:bg-slate-800 flex items-center justify-center rounded-lg"
+                >
+                  <Copy className="w-4 h-4" />
+                </TooltipTrigger>
+                <TooltipContent>复制代码</TooltipContent>
+              </Tooltip>
+              
+              <Button 
+                onClick={handleExportSCAD}
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-5 h-10 rounded-lg flex items-center gap-2 group transition-all shadow-lg shadow-blue-500/20"
+              >
+                <Download className="w-3.5 h-3.5 group-hover:translate-y-0.5 transition-transform" />
+                OpenSCAD
+              </Button>
+            </div>
           )}
+          
           <Button 
             onClick={handleExportSTL}
             className="bg-white hover:bg-slate-100 text-slate-950 font-bold px-6 h-12 rounded-xl shadow-xl flex items-center gap-2 group transition-all"
@@ -107,7 +147,7 @@ const getGeometry = (type: string) => {
   }
 };
 
-export const Viewer: React.FC<ViewerProps> = ({ objects, projectName, code, isSyncing, onSaveAsTemplate }) => {
+export const Viewer: React.FC<ViewerProps> = ({ objects, parameters = [], projectName, code, isSyncing, onSaveAsTemplate }) => {
   // Check if any object uses CSG operations
   const useCSG = objects.some(obj => obj.operation);
 
@@ -169,7 +209,7 @@ export const Viewer: React.FC<ViewerProps> = ({ objects, projectName, code, isSy
 
           <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 1.75} maxDistance={5000} />
         </Suspense>
-        <ExportHandler objects={objects} projectName={projectName} code={code} />
+        <ExportHandler objects={objects} parameters={parameters} projectName={projectName} code={code} />
       </Canvas>
 
       {/* Top Controls - Unified Capsule */}

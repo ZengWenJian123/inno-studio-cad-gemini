@@ -5,6 +5,8 @@ import { ScrollArea } from './ui/scroll-area';
 import { Plus, LayoutGrid, MessageSquare, Trash2, LogOut, LogIn, User, ExternalLink, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { User as FirebaseUser } from 'firebase/auth';
+import { AIConfig } from '../types';
+import { ModelSelector } from './ModelSelector';
 
 interface SidebarProps {
   projects: Project[];
@@ -16,6 +18,8 @@ interface SidebarProps {
   user: FirebaseUser | null;
   onLogin: () => void;
   onLogout: () => void;
+  aiConfig: AIConfig;
+  onConfigChange: (config: AIConfig) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
@@ -27,7 +31,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteProject,
   user,
   onLogin,
-  onLogout
+  onLogout,
+  aiConfig,
+  onConfigChange
 }) => {
   return (
     <div className="w-64 h-full bg-slate-950 border-r border-slate-800 flex flex-col overflow-hidden">
@@ -95,7 +101,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </ScrollArea>
 
       <div className="p-4 border-t border-slate-800 mt-auto space-y-4">
-        {!process.env.AI_API_KEY && (
+        <ModelSelector config={aiConfig} onChange={onConfigChange} />
+        
+        {((aiConfig.provider === 'gemini' && !process.env.GEMINI_API_KEY) || 
+          (aiConfig.provider === 'deepseek' && !process.env.DEEPSEEK_API_KEY)) && (
           <div className="px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
             <p className="text-[10px] text-amber-500 font-medium leading-tight">
               ⚠️ 缺少 AI API Key。请在 Secrets 面板中设置。
